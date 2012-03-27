@@ -5,6 +5,5 @@
  */
 
  
-$autoload['libraries']  = array('User');
-$autoload['model']      = array('user_model');
+$autoload['libraries']  = array('User_Request', 'User_Details', 'User');
 $autoload['config']     = array('user');

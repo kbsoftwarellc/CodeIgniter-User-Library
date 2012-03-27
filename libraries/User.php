@@ -1,279 +1,164 @@
 <?php if ( ! defined('BASEPATH')) exit('No direct script access allowed');
+
 /**
- * Simple User Management Library
+ * @package Simple User Library [getsparks.org]
+ * @name CodeIgniter User Library
+ * @author Kenny Brown
+ * @link NA
+ * @license MIT License Copyright (c) 2012 Kenny Brown
  * 
- * The goal of this library is to provide all the functions necessary to create new users,
- * - create new users
- * - authenticate their access
- * - allow email account activation
- * - gather additional info from users outside of scope of users table
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ * 
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ * 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
  */
-class User extends CI_Controller
+
+class User
 {
-    protected $_user_id;
-    protected $_username;
-    protected $_email;
-    protected $_password;
-    protected $_active = 0;
-    protected $_pw_salt;
-    protected $_enc_password;
+    protected $_user;
     protected $_config;
-    protected $_user_details;
     
-        
     public function __construct()
     {
-        parent::__construct();
-        
-        $this->_config = $this->config->item('user');
-        $this->_pw_salt = $this->_config['pw_salt'];
+        $this->_CI = get_instance();
+        $this->_CI->load->model('user_model');
+        $this->_CI->load->spark('messages/1.0.2');
+        $this->_config  = $this->_CI->config->item('user');
+        $this->_user = new stdClass();
     }
     
-    public function getUserId()
+    public function find($where_array)
     {
-        return $this->_user_id; 
+        $user = $this->_CI->user_model->findUser($where_array);
+        $this->_user = ($user) ? $user : new stdClass();
+        return $this;
     }
     
-    public function setUsername($username)
+    public function create($username, $email, $password, $active = 0)
     {
-        //Make sure something was passed to me and a email doesn't already exist
-        if (strlen($username) > 0) {
-            return $this->_username = $username;
-        } else {
-            return false;
+        if ($this->_config['auto_encrypt']) {
+            $password = $this->encryptPassword($password);
         }
+        
+        $userId = $this->_CI->user_model->createUser($username, $email, $password, $active);
+        
+        if ($userId) {
+            $this->_user = (object) array(
+                'id' => $userId,
+                'username' => $username,
+                'email' => $email,
+                'password' => $password,
+                'active' => $active
+            );
+        }
+        
+        return $this;
+    }
+    
+    public function authenticate($username, $password)
+    {
+        if ($this->_config['auto_encrypt']) {
+            $password = $this->encryptPassword($password);
+        }
+        
+        $this->find(array('username' => $username, 'password' => $password));
+        
+        if (!$this->getId()) {
+            $this->_CI->messages->add('Username/Password match not found', 'error');
+            return false;
+        } else {
+            if ($this->isActive()) {
+                $this->_CI->messages->add('Your account IS active! Good Job!', 'success');
+                return true;
+            } else {
+                $this->_CI->messages->add('Your account is not active', 'error');
+                return false;
+            }
+        }
+    }
+    
+    public function encryptPassword($password)
+    {
+        if (empty($this->_config['pw_salt']))
+            throw new Exception('No password salt provided');
+        
+        return sha1($this->_config['pw_salt'].$password);
+    }
+    
+    public function getId()
+    {
+        return (property_exists($this->_user, 'id')) ? $this->_user->id : 0;
     }
     
     public function getUsername()
     {
-        return $this->_username;
-    }
-    
-    public function setEmail($email)
-    {
-        //Make sure something was passed to me and a username doesn't already exist.
-        if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            return $this->_email = $email;
-        } else {
-            return false;
-        }
+        return (property_exists($this->_user, 'username')) ? $this->_user->username : '';
     }
     
     public function getEmail()
     {
-        return $this->_email;
+        return (property_exists($this->_user, 'email')) ? $this->_user->email : '';
     }
-    
-    public function setPassword($password)
-    {
-        if (strlen($password) > 0) {
-            return $this->_password = $password;
-        } else {
-            return false;
-        }
-        
-    }
-    
+
     public function getPassword()
     {
-        return $this->_password;
+        return (property_exists($this->_user, 'password')) ? $this->_user->password : '';
     }
     
-    public function setActive($active)
+    public function isActive()
     {
-        if (strlen($active) > 0) {
-            return $this->_active = (int)(bool)$active;
-        } else {
-            return false;
-        }
+        return (property_exists($this->_user, 'active')) ? $this->_user->active : 0;
     }
     
-    public function getActive()
+    public function updateUsername($username)
     {
-        return (bool)$this->_active;
+        $this->_CI->user_model->updateUser($this->getId(), array('username' => $username));
+        $this->_user->username = $username;
     }
     
-    public function setDetail($key, $value)
+    public function updateEmail($email)
     {
-        $this->_user_details->$key = $value;
+        $this->_CI->user_model->updateUser($this->getId(), array('email' => $email));
+        $this->_user->email = $email;
     }
     
-    public function getUserDetail($key)
+    public function updatePassword($password)
     {
-        return (isset($this->_user_details->$key)) ? $this->_user_details->$key : false;
-    }
-    
-    private function _encryptPassword()
-    {
-        if (empty($this->_pw_salt))
-            throw new Exception('No password salt provided');
-            
-        return md5($this->_pw_salt.$this->_password);
-    }
-    
-    private function _clearPrivateVars()
-    {
-        unset($this->_user_id);
-        unset($this->_username);
-        unset($this->_email);
-        unset($this->_password);
-        unset($this->_user_details);
-        $this->_active = 0;
-    }
-    
-    private function _setPrivateVars($user)
-    {
-        $this->_user_id         = $user->id;
-        $this->_username        = $user->username;
-        $this->_email           = $user->email;
-        $this->_password        = $user->password;
-        $this->_active          = $user->active;
-        $this->_user_details    = $this->_parseUserDetails($user->details);
-    }
-    
-    private function _parseUserDetails($details)
-    {
-        if (empty($details)) return array();
-        
-        $final_arr = array();
-        $tmp_arr = explode('....,', $details);
-        
-        foreach ($tmp_arr as $row) {
-            list($key, $value) = explode('@@@@', $row);
-            $final_arr[$key] = $value;
+        if ($this->_config['auto_encrypt']) {
+            $password = $this->encryptPassword($password);
         }
         
-        return (object)$final_arr;
+        $this->_CI->user_model->updateUser($this->getId(), array('password' => $password));
+        $this->_user->password = $password;
     }
     
-    public function reset()
+    public function deactivate()
     {
-        $this->_clearPrivateVars();
+        $this->_CI->user_model->updateUser($this->getId(), array('active' => 0));
+        $this->_user->active = 0;
     }
     
-    public function loadUserById($user_id)
+    public function reactivate()
     {
-        $user = $this->user_model->loadUser('id', $user_id);
-        
-        if ($user) {
-            $this->_setPrivateVars($user);
-            return true;
-        } else {
-            return false;
-        }
+        $this->_CI->user_model->updateUser($this->getId(), array('active' => 1));
+        $this->_user->active = 1;
     }
     
-    public function loadUserByUsername($username)
+    public function activate()
     {
-        $user = $this->user_model->loadUser('username', $username);
-        
-        if ($user) {
-            $this->_setPrivateVars($user);
-            return true;
-        } else {
-            return false;
-        }
+        $this->reactivate();
     }
-    
-    public function loadUserByEmail($email)
-    {                                 
-        $user = $this->user_model->loadUser('email', $email);
-        
-        if ($user) {
-            $this->_setPrivateVars($user);
-            return true;
-        } else {
-            return false;
-        }
-    }
-    
-    public function loadUserByDetail($key, $value)
-    {
-        $user = $this->user_model->loadUserByDetail($$key, $value);
-        
-        if ($user) {
-            $this->_setPrivateVars($user);
-            return true;
-        } else {
-            return false;
-        }
-    }
-    /**
-     * Create a new user account with validation.
-     * Required _username, _email, _password to be set.
-     * @return int|string $this->_user_id int if successful, string containing error message if failed.
-     */
-    public function createAccount()
-    {
-        if (!$this->_user_id) {
-            if (!$this->_username)
-                throw new Exception('Username is not set', 1);
-            
-            if (!$this->_email) 
-                throw new Exception('Email is not set', 1);
-            
-            if (!$this->_password) 
-                throw new Exception('Password is not set', 1);
-                
-            //Make sure email doesn't already exist
-            if ($this->user_model->emailExists($this->_email))
-                //throw new Exception("Email[{$this->_email}] already exists");
-                return "Email Address ({$this->_email}) already exists";
-                
-            //Make sure username doesn't already exist
-            if ($this->user_model->usernameExists($this->_username))
-                //throw new Exception("Username[{$this->_username}] already exists");
-                return "Username ({$this->_username}) already exists";
-                
-            if ($this->_config['auto_encrypt'])
-                $this->_enc_password = $this->_encryptPassword();
-            else
-                $this->_enc_password = $this->_password;
-            
-            //Validation completed
-            $this->_user_id = $this->user_model->createUser($this->_username, $this->_email, $this->_enc_password, $this->_active);            
-            
-            if ($this->_user_id) {
-                return $this->_user_id;
-            } else {
-                return 'Failed to create new user';
-            }
-        } else {
-            throw new Exception('Cannot create account, User ID is already set!', 1);
-        }
-    }
-    
-    public function updateUser()
-    {
-        if ($this->_user_id) {
-            if ($this->_config['auto_encrypt'])
-                $this->_enc_password = $this->_encryptPassword();
-            else
-                $this->_enc_password = $this->_password;
-                
-            $updated_user = $this->user_model->saveUser(
-                $this->_user_id, 
-                $this->_username, 
-                $this->_email, 
-                $this->_enc_password, 
-                $this->_active
-            );
-            
-            if ($updated_user) {
-                while (list($key, $val) = each($this->_user_details)) {
-                    if (!$this->user_model->saveUserDetail($this->_user_id, $key, $val))
-                        return 'Failed to update user detail: ' . $key . ' => ' . $val;
-                }
-            }
-        } else {
-            throw new Exception('No User ID Provided. Cannot update', 1);
-        }
-    }
-    
-    public function save()
-    {
-    
-    }
-    
-    
-} 
+}
