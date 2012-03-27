@@ -1,4 +1,4 @@
-name: Simple User Library
+name: ci_user_library
 version: 0.0.1
 compatibility: 2.1.0
 dependencies:
