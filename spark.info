@@ -1,5 +1,5 @@
 name: Simple User Library
-version: 0.0.2
+version: 0.0.3
 compatibility: 2.1.0
 dependencies:
     messages: 1.0.2
