@@ -35,9 +35,9 @@ class User_Request_Model extends CI_Model
         $this->db->update('users_request', $data, array('id' => $id), 1);
     }
     
-    public function find($requestKey)
+    public function find($requestKey, $active)
     {
-        $q = $this->db->get_where('users_request', array('request_key' => $requestKey), 1);
+        $q = $this->db->get_where('users_request', array('request_key' => $requestKey, 'active' => $active), 1);
         
         return ($q->num_rows() > 0) ? $q->row() : false;
     }
